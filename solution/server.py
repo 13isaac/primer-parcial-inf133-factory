@@ -14,7 +14,7 @@ class Compra:
 
 class Fisico(Compra):
     def __init__(self, client, status, payment, shipping, products):
-        super().__init__( client, status, payment,"Fisico")
+        super().__init__( client, status, payment,"Fisica")
         self.shipping=shipping
         self.products=products
 
@@ -49,17 +49,39 @@ class CompraService:
         expiration=data.get('expiration',None)
         nuevo=self.factory.create_compra(order_type,client,status,payment,shipping,products,code,expiration)
         if not compras:
-            compras[1]=nuevo.__dict__
+            compras[1]=nuevo
         else:
             id=max(compras.keys())+1
-            compras[id]=nuevo.__dict__
+            compras[id]=nuevo
         return nuevo.__dict__
     
+    def read_compras(self):
+        return {index:compra.__dict__ for index,compra in compras.items()}
+
     def buscar_status(self,status):
         n={}
-        lista=compras.values()
-        for i in lista:
-            if i['status']==status:
+        lista=self.read_compras().items()
+        for i, j in lista:
+            if j['status']==status:
+                n[i]=j
+        return n
+    
+    def actualizar_id(self,id,data):
+        status=data.get('status',None)
+        lista=self.read_compras().items()
+        for i, j in lista:
+            if i==id:
+                j['status']=status
+                return j
+        return None
+    
+    def eliminar_id(self,id):
+        lista=self.read_compras().items()
+        for i,j in lista:
+            if i==id:
+                del compras[i]
+                return {"message":"Orden eliminada"}
+        return None
                 
 
 
@@ -83,12 +105,23 @@ class CompraHandler(BaseHTTPRequestHandler):
         super().__init__(*args,**kwargs)
 
     def do_GET(self):
-        parsed_path=parse_qs(self.path)
-        query_params=urlparse(parsed_path)
+        parsed_path=urlparse(self.path)
+        query_params=parse_qs(parsed_path.query)
         if parsed_path.path=="/orders/":
             if 'status' in query_params:
                 status=query_params['status'][0]
-                busca=self.controller
+                busca=self.controller.buscar_status(status)
+                if busca:
+                    HTTPResponseHandler.response_handler(self,200,busca)
+                else:
+                    HTTPResponseHandler.response_handler(self,404,{"Error":"No existe el estado"})
+            else:
+                HTTPResponseHandler.response_handler(self,404,{"Error":"Ruta no encontrada"})
+        elif parsed_path.path=="/orders":
+            HTTPResponseHandler.response_handler(self,200,self.controller.read_compras())
+        else:
+            HTTPResponseHandler.response_handler(self,404,{"Error":"Ruta no encontrada"})
+        
 
     def do_POST(self):
         if self.path=="/orders":
@@ -98,9 +131,34 @@ class CompraHandler(BaseHTTPRequestHandler):
         else:
             HTTPResponseHandler.response_handler(self,404,{"Error":"ruta no encontrada"})
 
+    def do_PUT(self):
+        if self.path.startswith("/orders/"):
+            id=int(self.path.split("/")[-1])
+            data=HTTPResponseHandler.read_data(self)            
+            compra_act=self.controller.actualizar_id(id,data)
+            if compra_act:
+                HTTPResponseHandler.response_handler(self,200,compra_act)
+            else:
+                HTTPResponseHandler.response_handler(self,404,{"Error":"ID no encontrado"})
+        else:
+            HTTPResponseHandler.response_handler(self,404,{"Error":"Ruta no encontrada"})
 
+    def do_DELETE(self):
+        if self.path.startswith("/orders/"):
+            id=int(self.path.split("/")[-1])
+            borrado=self.controller.eliminar_id(id)
+            if borrado:
+                HTTPResponseHandler.response_handler(self,200,borrado)
+            else:
+                HTTPResponseHandler.response_handler(self,404,{"Error":"ID no encotrado"})
+        else:
+            HTTPResponseHandler.response_handler(self,404,{"Error":"Ruta no encontrada"})
+
+
+            
 
 def main(port=8000):
+
     try:
         server_adress=('',port)
         httpd=HTTPServer(server_adress,CompraHandler)
